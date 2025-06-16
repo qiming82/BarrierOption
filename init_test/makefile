@@ -1,0 +1,23 @@
+# Makefile for Barrier Option Pricing
+CXX = g++
+CXXFLAGS = -O3 -Wall -std=c++11
+TARGET := barrier_option
+SRC := barrier_test.cpp
+OBJS := $(SRC:.cpp=.o)
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CXX) $(CXXFLAGS) -o $@ $^
+
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJS) $(TARGET)
+
+
+#run: $(TARGET)
+#    ./$(TARGET)
+
+#.PHONY: all clean run

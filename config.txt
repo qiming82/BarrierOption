@@ -1,0 +1,16 @@
+S0 = 100.0
+K = 100.0
+B = 120.0
+T = 1.0
+r = 0.05
+v0 = 0.04
+kappa = 2.0
+theta = 0.04
+xi = 0.3
+rho = -0.7
+beta = -0.3
+numSimulations = 100000
+numSteps = 360
+seed = 121234567783 
+optionType = Call
+barrierType = UpAndOut
