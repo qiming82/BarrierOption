@@ -6,6 +6,12 @@ dS_t &= rS_t dt + \sqrt{V_t}\sigma(S_t,t) S_t dW_t^s,\\
 dV_t &= \kappa (\theta - V_t) + \xi\sqrt{V_t} dW_t^v
 \end{eqnarray}
 
+\begin{equation}
+    \sigma = 0.2 \left(\frac{S}{S_0}\right)^\beta
+\end{equation}
+if \sigma = 1, it is just Heston model.
+
+
 Smart pointer is used for rng (auto delete to avoid mem leak), seed is provided as input for the replication purpose.
 
 First few functionalities:
@@ -14,8 +20,8 @@ First few functionalities:
 - check a range of outcomes when varying intial values (S0, V0)
 
 To do:
-- to calculate an implied vol
-- to include flag to calculate American option
+- to add convergence test
+- to include code to calculate American option?
 
 Output of first few tests:
 qimingwang@Qimings-Mac-mini barrierOption_TD % make            
