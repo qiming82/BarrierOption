@@ -30,8 +30,17 @@ int main() {
  
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
-        std::cout<<"Time cost in secs:      "<< duration*1e-6 << " seconds" << std::endl;
+        std::cout<<"Time cost (one-time calc) in secs:      "<< duration*1e-6 << " seconds" << std::endl;
 
+// ----------- convergence test  -------------
+        start = std::chrono::high_resolution_clock::now(); // timer
+        std::cout << "convergence test: ..." << std::endl;
+        option.calcConvgTest(200000, 200000, "convergence.csv");
+        std::cout << "Convergence test data saved to convergence.csv\n";
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
+        std::cout<<"Time cost for range test in secs:      "<< duration*1e-6 << " seconds" << std::endl;
+// ----------- convergence test  -------------
 
         // Compute Greeks for S0 range and save to CSV
         start = std::chrono::high_resolution_clock::now(); // timer

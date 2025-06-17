@@ -47,6 +47,9 @@ public:
     Greeks calcGreeks(double epsilonS = 0.01, double epsilonV = 0.0001) const;
     void calcGreeksRange(double S_min, double S_max, int numPts, const std::string& outputFile) const;
 
+    // convergence
+    void calcConvgTest(int minSims, int stepSize, const std::string& outputFile) const;
+
 private:
     double S0; // Initial stock price
     double K;  // Strike price
@@ -87,4 +90,6 @@ private:
 
     // auxi fun to compute price w changed parameters
     double priceWithParams(double newS0, double newV0) const;
+
+    double priceWithSimulations(int sims) const;
 };

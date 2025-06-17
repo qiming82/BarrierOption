@@ -177,3 +177,7 @@ std::string BarrierOption::getBarrierType() const {
 const std::map<std::string, std::string>& BarrierOption::getConfigParams() const {
     return params;
 }
+
+
+
+
