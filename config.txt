@@ -14,3 +14,4 @@ numSteps = 360
 seed = 121234567783 
 optionType = Call
 barrierType = UpAndOut
+exerciseStyle = American

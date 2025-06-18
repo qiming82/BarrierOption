@@ -17,6 +17,9 @@ enum class OptionType { Call, Put };
 // Enum for barrier type
 enum class BarrierType { UpAndOut, DownAndOut };
 
+// Enum for exercise style
+enum class ExerciseStyle { European, American };
+
 //const double pi = std::atan(1)*4.0;
 
 // Class to encapsulate barrier option pricing with general SLV
@@ -34,6 +37,9 @@ public:
 
     // Price the barrier option using Monte Carlo
     double price() const;
+
+    // american option
+    double priceAmerican() const;
 
     // Getter for option type
     std::string getOptionType() const;
@@ -68,6 +74,7 @@ private:
 
     OptionType optionType; // Call or Put
     BarrierType barrierType; // Up-and-out or Down-and-out
+    ExerciseStyle exerciseStyle; // European or American
     std::unique_ptr<std::mt19937> rng; // Smart pointer for random number generator
 //    std::mt19937* rng;
 
@@ -88,8 +95,14 @@ private:
     // Simulate one price and variance path and check barrier condition
     double simulatePath() const;
 
+    // Simulate one price and variance path, return path (American)
+    std::pair<double, std::vector<std::pair<double, double>>> simulatePath(bool storePath) const;
+
     // auxi fun to compute price w changed parameters
     double priceWithParams(double newS0, double newV0) const;
 
+    // auxi fun to compute monte carlon convergence test
     double priceWithSimulations(int sims) const;
+
+
 };

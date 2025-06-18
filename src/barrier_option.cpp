@@ -124,6 +124,15 @@ BarrierOption::BarrierOption(const std::string& configFile) : rng(new std::mt199
         } else {
             throw std::runtime_error("Invalid barrierType: " + params.at("barrierType"));
         }
+
+        if (params.at("exerciseStyle") == "European") {
+            exerciseStyle = ExerciseStyle::European;
+        } else if (params.at("exerciseStyle") == "American") {
+            exerciseStyle = ExerciseStyle::American;
+        } else {
+            throw std::runtime_error("Invalid exerciseStyle");
+        }
+
     } catch (const std::out_of_range& e) {
         throw std::runtime_error("Missing config parameter");
     }
@@ -178,6 +187,129 @@ const std::map<std::string, std::string>& BarrierOption::getConfigParams() const
     return params;
 }
 
+// american option  simulate path overload  -------------------
+std::pair<double, std::vector<std::pair<double, double>>> BarrierOption::simulatePath(bool storePath) const {
+    double dt = T / numSteps;
+    double S = S0;
+    double v = v0;
+    bool knockedOut = false;
+    std::vector<std::pair<double, double>> path(storePath ? numSteps + 1 : 0);
+    if (storePath) {
+        path[0] = {S, v};
+    }
+
+    for (int i = 0; i < numSteps; ++i) {
+        double t = i * dt;
+        std::pair<double,double> normals = generateCorrelatedNormals();
+        double z_s = normals.first;
+        double z_v = normals.second;
+//        auto [z_s, z_v] = generateCorrelatedNormals();
+        
+        v += mu_v(v, t) * dt + sigma_v(v, t) * std::sqrt(dt) * z_v;
+        v = std::max(v, 0.0);
+        
+        double vol = std::sqrt(std::max(v, 0.0) * localVol(S, t) * localVol(S, t));
+        S *= std::exp((r - 0.5 * vol * vol) * dt + vol * std::sqrt(dt) * z_s);
+
+        if (barrierType == BarrierType::UpAndOut && S >= B) {
+            knockedOut = true;
+            break;
+        } else if (barrierType == BarrierType::DownAndOut && S <= B) {
+            knockedOut = true;
+            break;
+        }
+
+        if (storePath) {
+            path[i + 1] = {S, v};
+        }
+    }
+
+    double payoff = 0.0;
+    if (!knockedOut) {
+        if (optionType == OptionType::Call) {
+            payoff = std::max(S - K, 0.0);
+        } else {
+            payoff = std::max(K - S, 0.0);
+        }
+    }
+    return {payoff, path};
+}
+
+
+// american option   langstaff schwartz monte carlo  --------------------
+double BarrierOption::priceAmerican() const {
+    double dt = T / numSteps;
+    std::vector<std::vector<std::pair<double, double>>> paths(numSimulations);
+    std::vector<double> cashFlows(numSimulations, 0.0);
+
+    // Simulate paths
+    for (int i = 0; i < numSimulations; ++i) {
+        auto result = simulatePath(true);
+        paths[i] = result.second;
+        cashFlows[i] = result.first;
+//        auto [payoff, path] = simulatePath();
+//        paths[i] = path;
+//        cashFlows[i] = payoff;
+    }
+
+    // Backward induction using Longstaff-Schwartz
+    for (int t = numSteps - 1; t >= 1; --t) {
+        std::vector<double> X, Y;
+        std::vector<int> indices;
+        for (int i = 0; i < numSimulations; ++i) {
+            double S = paths[i][t].first;
+            if (barrierType == BarrierType::UpAndOut && S >= B) continue;
+            if (barrierType == BarrierType::DownAndOut && S <= B) continue;
+            double exercise = (optionType == OptionType::Call) ? std::max(S - K, 0.0) : std::max(K - S, 0.0);
+            if (exercise > 0) {
+                X.push_back(S);
+                Y.push_back(cashFlows[i] * std::exp(-r * dt * (numSteps - t)));
+                indices.push_back(i);
+            }
+        }
+
+        if (X.empty()) continue;
+
+        // Linear regression: E[Y] = a + b*S + c*S^2
+        double sumX = 0, sumX2 = 0, sumX3 = 0, sumX4 = 0, sumY = 0, sumXY = 0, sumX2Y = 0;
+        int n = X.size();
+        for (int i = 0; i < n; ++i) {
+            double x = X[i], y = Y[i];
+            sumX += x;
+            sumX2 += x * x;
+            sumX3 += x * x * x;
+            sumX4 += x * x * x * x;
+            sumY += y;
+            sumXY += x * y;
+            sumX2Y += x * x * y;
+        }
+
+        // Solve [n, sumX, sumX2; sumX, sumX2, sumX3; sumX2, sumX3, sumX4][a, b, c] = [sumY, sumXY, sumX2Y]
+        double det = n * (sumX2 * sumX4 - sumX3 * sumX3) - sumX * (sumX * sumX4 - sumX2 * sumX3) +
+                     sumX2 * (sumX * sumX3 - sumX2 * sumX2);
+        if (std::abs(det) < 1e-10) continue;
+
+        double a = (sumY * (sumX2 * sumX4 - sumX3 * sumX3) - sumX * (sumXY * sumX4 - sumX2Y * sumX3) +
+                    sumX2 * (sumXY * sumX3 - sumX2Y * sumX2)) / det;
+        double b = (n * (sumXY * sumX4 - sumX2Y * sumX3) - sumY * (sumX * sumX4 - sumX2 * sumX3) +
+                    sumX2 * (sumX * sumX2Y - sumX2 * sumXY)) / det;
+        double c = (n * (sumX2 * sumX2Y - sumX3 * sumXY) - sumX * (sumX * sumX2Y - sumX2 * sumXY) +
+                    sumY * (sumX * sumX3 - sumX2 * sumX2)) / det;
+
+        // Update cash flows
+        for (int i : indices) {
+            double S = paths[i][t].first;
+            double exercise = (optionType == OptionType::Call) ? std::max(S - K, 0.0) : std::max(K - S, 0.0);
+            double continuation = a + b * S + c * S * S;
+            if (exercise > continuation) {
+                cashFlows[i] = exercise * std::exp(r * dt * (numSteps - t));
+            }
+        }
+    }
+
+    double sumCashFlows = std::accumulate(cashFlows.begin(), cashFlows.end(), 0.0);
+    return sumCashFlows / numSimulations;
+}
 
 
 
