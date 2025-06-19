@@ -78,11 +78,13 @@ void BarrierOption::calcGreeksRange(double S_min, double S_max, int numPoints, c
     out << "StockPrice,Price,Delta,Gamma,Vega\n";
     
     double v = std::stod(params.at("v0"));
+    std::cout<<"v0 remain unchanged:"<< v << std::endl;
 
     double dS = (S_max - S_min) / (numPoints - 1);
     for (size_t i = 0; i < numPoints-1; ++i) {
         double S = S_min + i * dS;
         auto params = getModifiedConfig(*this,S,v);
+//        std::cout<<"params updated ... "<< std::endl;
         std::string tempFile = writeTempConfig(params);
         BarrierOption temp(tempFile);
 //        BarrierOption temp = *this;

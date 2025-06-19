@@ -1,9 +1,10 @@
 B = 120.0
 K = 100.0
-S0 = 100.000000
+S0 = 119.000000
 T = 1.0
 barrierType = UpAndOut
-beta = -0.3
+beta = -0.55
+exerciseStyle = European
 kappa = 2.0
 numSimulations = 100000
 numSteps = 360

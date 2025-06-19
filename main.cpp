@@ -17,6 +17,7 @@ int main() {
     try {
         // Read from config file
         BarrierOption option("config.txt");
+
         double price;
         const auto& params = option.getConfigParams();
         if (params.at("exerciseStyle") == "American") {
@@ -45,10 +46,11 @@ int main() {
                   << " Option Price: " << price << std::endl;
         std::cout << "Delta: " << g.delta << "\nGamma: " << g.gamma << "\nVega: " << g.vega << std::endl;
  
-        end = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
         std::cout<<"Time cost (one-time calc) in secs:      "<< duration*1e-6 << " seconds" << std::endl;
 // ---------- simple price, greeks test ------------------------
+
 
 // ----------- convergence test  --------------------------------
         start = std::chrono::high_resolution_clock::now(); // timer
@@ -59,7 +61,7 @@ int main() {
         duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
         std::cout<<"Time cost for range test in secs:      "<< duration*1e-6 << " seconds" << std::endl;
 // ----------- convergence test  --------------------------------
-
+*/
 // ----------- investigate over a range of S0  --------------------------------
         // Compute Greeks for S0 range and save to CSV
         start = std::chrono::high_resolution_clock::now(); // timer
@@ -71,7 +73,7 @@ int main() {
         std::cout<<"Time cost for range test in secs:      "<< duration*1e-6 << " seconds" << std::endl;
 // ----------- investigate over a range of S0  --------------------------------
 
-*/
+
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
