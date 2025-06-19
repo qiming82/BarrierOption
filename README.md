@@ -1,6 +1,7 @@
 Test implementation of Barrier option with stochastic local model
 
 Used Heston CEV-like model
+
 \begin{eqnarray}
 dS_t &= rS_t dt + \sqrt{V_t}\sigma(S_t,t) S_t dW_t^s,\\
 dV_t &= \kappa (\theta - V_t) + \xi\sqrt{V_t} dW_t^v
@@ -19,6 +20,7 @@ First few functionalities:
 - greeks including delta, gamma, vega (to be extended if necessary)
 - check a range of outcomes when varying intial values (S0, V0)
 - to add convergence test
-
-To do:
 - to include code to calculate American option?
+
+to do:
+- add other choices and optimize the code
