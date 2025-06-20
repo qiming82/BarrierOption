@@ -35,6 +35,18 @@ int main() {
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
         std::cout<<"Time cost (one-time calc) in secs:      "<< duration*1e-6 << " seconds" << std::endl;
 
+
+// ----------- investigate over a range of S0  --------------------------------
+        // Compute Greeks for S0 range and save to CSV
+        start = std::chrono::high_resolution_clock::now(); // timer
+        std::cout<< "start calculating range ..." << std::endl;
+        option.calcGreeksRange(80.0, 120.0, 41, "greeks.csv");
+        std::cout << "Greeks data saved to greeks.csv\n";
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
+        std::cout<<"Time cost for range test in secs:      "<< duration*1e-6 << " seconds" << std::endl;
+// ----------- investigate over a range of S0  --------------------------------
+
 /*
 // ---------- simple price, greeks test ------------------------
         double price = option.price();
@@ -62,17 +74,6 @@ int main() {
         std::cout<<"Time cost for range test in secs:      "<< duration*1e-6 << " seconds" << std::endl;
 // ----------- convergence test  --------------------------------
 */
-// ----------- investigate over a range of S0  --------------------------------
-        // Compute Greeks for S0 range and save to CSV
-        start = std::chrono::high_resolution_clock::now(); // timer
-        std::cout<< "start calculating range ..." << std::endl;
-        option.calcGreeksRange(80.0, 120.0, 41, "greeks.csv");
-        std::cout << "Greeks data saved to greeks.csv\n";
-        end = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
-        std::cout<<"Time cost for range test in secs:      "<< duration*1e-6 << " seconds" << std::endl;
-// ----------- investigate over a range of S0  --------------------------------
-
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
