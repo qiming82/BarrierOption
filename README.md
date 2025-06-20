@@ -23,4 +23,16 @@ First few functionalities:
 - to include code to calculate American option?
 
 to do:
+- add greeks for American option
 - add other choices and optimize the code
+
+Code structure:
+- main.cpp
+  |
+  |--- \include\
+            barrier_option.h
+  |--- \src\
+            barrier_option.cpp
+            barrier_analyzer.cpp
+
+
