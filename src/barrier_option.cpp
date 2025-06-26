@@ -9,11 +9,15 @@
 #include <map>
 #include <algorithm>
 #include "barrier_option.h"
+#include <iomanip> // Required for std::fixed and std::setprecision
 //#include "util.h"
+#include <numeric>
+#include <Eigen/SparseLU>
 
 // pi=3.141592653589793;
 
 const double pi = std::atan(1)*4.0;
+
 
 // Generate correlated standard normal random variables
 std::pair<double, double> BarrierOption::generateCorrelatedNormals() const {
@@ -133,6 +137,18 @@ BarrierOption::BarrierOption(const std::string& configFile) : rng(new std::mt199
             throw std::runtime_error("Invalid exerciseStyle");
         }
 
+        if (params.find("pricingMethod") != params.end()) {
+            if (params.at("pricingMethod") == "PDE") {
+                pricingMethod = PricingMethod::PDE;
+            } else if (params.at("pricingMethod") == "MonteCarlo") {
+                pricingMethod = PricingMethod::MonteCarlo;
+            } else {
+                throw std::runtime_error("Invalid pricingMethod");
+            }
+        } else {
+            pricingMethod = PricingMethod::MonteCarlo; // Default
+        }
+
     } catch (const std::out_of_range& e) {
         throw std::runtime_error("Missing config parameter");
     }
@@ -157,20 +173,29 @@ BarrierOption::BarrierOption(const std::string& configFile) : rng(new std::mt199
     sigma_v = [this](double v, double t) { return xi * std::sqrt(std::max(v, 0.0)); };
 
     // Define local volatility (CEV-like for demonstration)
-    localVol = [this](double S, double t) { return 0.2 * std::pow(S / 100.0, beta); };
+    localVol = [this](double S, double t) { return 0.2 * std::pow(S, beta); };
 }
 
 // Price the barrier option using Monte Carlo
 double BarrierOption::price() const {
-    double sumPayoffs = 0.0;
 
-    // Run Monte Carlo simulations
-    for (size_t i = 0; i < numSimulations; ++i) {
-        sumPayoffs += simulatePath();
+    if (pricingMethod == PricingMethod::PDE)
+        {
+            std::cout<< "using PDE to solve price (ADI) ..."<< std::endl;
+            return priceADI();
+        } // isolate PDE solver
+    else{
+        std::cout<< "using MC to solve price ..."<< std::endl;
+        double sumPayoffs = 0.0;
+
+        // Run Monte Carlo simulations
+        for (size_t i = 0; i < numSimulations; ++i) {
+            sumPayoffs += simulatePath();
+        }
+
+        // Calculate average payoff and discount to present value
+        return std::exp(-r * T) * (sumPayoffs / numSimulations);
     }
-
-    // Calculate average payoff and discount to present value
-    return std::exp(-r * T) * (sumPayoffs / numSimulations);
 }
 
 // Getter for option type
@@ -310,6 +335,241 @@ double BarrierOption::priceAmerican() const {
     double sumCashFlows = std::accumulate(cashFlows.begin(), cashFlows.end(), 0.0);
     return sumCashFlows / numSimulations;
 }
+// --- pde solver ADI
+double BarrierOption::priceADI() const {
+    double epsiln = 1e-8;
+    std::cout<<std::fixed << std::setprecision(8);
+    // Grid parameters
+    double S_max = 1.5 * B; // 180 for B=120
+    double v_max = 0.4;     // 10x theta
+    int Ns = 200;
+    int Nv = 200;
+    int Nt = 100;
+    double ds = S_max / Ns;
+    double dv = v_max / Nv;
+    double dt = T / Nt;
+//    double theta = 0.5; // Douglas-Rachford parameter
+//    Nt = 1;
+
+    // Grid
+    std::vector<double> S(Ns + 1);
+    std::vector<double> v(Nv + 1);
+    for (int i = 0; i <= Ns; ++i) S[i] = i * ds;
+    for (int j = 0; j <= Nv; ++j) v[j] = j * dv;
+
+    // Value grid
+    Eigen::VectorXd V((Ns + 1) * (Nv + 1)), V_star((Ns + 1) * (Nv + 1));
+    std::vector<Eigen::Triplet<double>> triplets;
+
+    // Terminal condition (t = T)
+    for (int i = 0; i <= Ns; ++i) {
+        for (int j = 0; j <= Nv; ++j) {
+            int k = i * (Nv + 1) + j;
+            if (S[i] < B) {
+                V(k) = optionType == OptionType::Call ? std::max(S[i] - K, epsiln) : std::max(K - S[i], epsiln);
+            } else {
+                V(k) = 0.0;
+            }
+        }
+    }
+
+    // Time stepping (backward from T to 0)
+    for (int n = 0; n < Nt; ++n) {
+        double t_n = T - n * dt; // Corrected time, tau = T -t
+
+        // First half-step: implicit in S
+//        Eigen::SparseMatrix<double> A_S(Ns - 1, Ns - 1);
+//        Eigen::VectorXd rhs_S(Ns - 1);
+
+        Eigen::SparseMatrix<double> A_S(Ns+1, Ns+1);
+        Eigen::VectorXd rhs_S(Ns+1);
+
+        for (int j = 1; j < Nv; ++j) {
+            triplets.clear();
+            rhs_S.setZero();
+//            std::cout<< S[0]<<", "<<S[1]<<", "<<S[Ns]<<std::endl;
+
+            double aa = 0.0; //0.5 * v[j] * std::pow(localVol(S[0], t_n), 2) * S[0] * S[0] / (ds * ds);
+            double bb = r * S[0] / (2.0 * ds);
+            triplets.push_back(Eigen::Triplet<double>(0, 0, 1.0 + 0.5* dt*(2.0*aa + r)));
+            triplets.push_back(Eigen::Triplet<double>(0, 1, -0.5 * dt * (aa + bb)));
+
+//            std::cout<< "diag 0" <<", "<< 1.0 + 0.5* dt*(2.0*aa + r) <<std::endl;
+//            std::cout<< "diag 01" <<", "<< -0.5* dt*(aa + bb) <<std::endl;
+
+            for (int i = 1; i < Ns; ++i) {
+                double aa = 0.5 * v[j] * std::pow(localVol(S[i], t_n), 2) * S[i] * S[i] / (ds * ds);
+                double bb = r * S[i] / (2.0 * ds);
+                double cc = 0.5 * xi * xi * v[j]; // / (dv * dv);
+                double dd = kappa * (theta - v[j]); // / (2 * dv);
+                double cross = rho * xi * v[j] * localVol(S[i], t_n) * S[i]; // / (4 * ds * dv);
+                int k = i * (Nv + 1) + j;
+
+//                std::cout<< "diag i,i" <<", "<< i <<", "<<1.0 + 0.5* dt*(2.0*aa + r) <<std::endl;
+  
+                // Implicit S terms: I + 0.5 * dt * (-L_S + r)
+//                triplets.push_back(Eigen::Triplet<double>(i - 1, i - 1, 1.0 + 0.5* dt*(2.0*aa + r)));
+//                triplets.push_back(Eigen::Triplet<double>(i - 1, i, -0.5 * dt * (aa + bb)));
+//                triplets.push_back(Eigen::Triplet<double>(i - 1, i - 2, 0.5 * dt * (-aa + bb)));
+
+                triplets.push_back(Eigen::Triplet<double>(i, i, 1.0 + 0.5* dt*(2.0*aa + r)));
+                triplets.push_back(Eigen::Triplet<double>(i, i+1, -0.5 * dt * (aa + bb))); // upper diag
+                triplets.push_back(Eigen::Triplet<double>(i, i-1,  0.5 * dt * (-aa + bb)));  // lower diag
+
+                // Explicit terms rhs
+                double v1 = (V(k+1) - V(k-1))/(2.0*dv);
+                double v2 = (V(k+1) - 2.0*V(k) + V(k-1))/dv/dv;
+                double dvcross = (V(k+ Nv + 2) - V(k+ Nv) - V(k-Nv) + V(k-Nv-2))/(4.0*ds*dv);
+
+                rhs_S(i) = V(k) + dt/2.0*(dd*v1 + cc*v2 + cross*dvcross);
+            }
+
+//            int i = Ns;
+            aa = 0.5 * v[j] * std::pow(localVol(S[Ns], t_n), 2) * S[Ns] * S[Ns] / (ds * ds);
+            bb = r * S[Ns] / (2.0 * ds);
+//            std::cout<< aa <<", "<<bb<<", "<<std::endl;
+
+            triplets.push_back(Eigen::Triplet<double>(Ns, Ns, 1.0 + 0.5* dt*(2.0*aa + r)));
+            triplets.push_back(Eigen::Triplet<double>(Ns, Ns-1,  0.5 * dt * (-aa + bb)));
+
+//            rhs_S(0) = 0.0;
+            rhs_S(Ns) = S_max - K * std::exp(r * (T - t_n + 0.5 * dt));
+
+//            for (int i = 0; i <= Ns; ++i) {
+//                std::cout <<i<<", rhs: "<< rhs_S(i)<<std::endl;
+//            }
 
 
+            // Boundary conditions for S
+            for (int i = 0; i <= Ns; ++i) {
+                int k = i * (Nv + 1) + j;
+                if (i == 0 || (barrierType == BarrierType::UpAndOut && S[i] -B>= epsiln)) {
+                    V_star(k) = 0.0;
+                }
+            }
 
+            // Solve tridiagonal system
+            A_S.setFromTriplets(triplets.begin(), triplets.end());
+/*
+            for (int i = 1; i <Ns; ++i) {
+                std::cout << "(i,j) " <<i<<", "<<j<<", "<< A_S.coeff(i-1,i)<<", "<< A_S.coeff(i,i)<<", "<< A_S.coeff(i,i+1)<<", "<<std::endl;
+            }
+            std::cout<<"A(0,0)"<< A_S.coeff(0,0)<<", "<< "A(0,1)"<< A_S.coeff(0,1)<<std::endl;
+*/
+
+            Eigen::SparseLU<Eigen::SparseMatrix<double>> solver_S;
+            solver_S.compute(A_S);
+//            std::cout<< "called S step solver, appears ok ..." << std::endl;
+            if (solver_S.info() != Eigen::Success) {
+                throw std::runtime_error("Sparse LU decomposition failed in S-step");
+            }
+            Eigen::VectorXd V_S_new = solver_S.solve(rhs_S);
+            for (int i = 0; i <= Ns; ++i) {
+//                std::cout<< V_S_new(i)<<std::endl;
+                V_star(i * (Nv + 1) + j) = V_S_new(i);
+            }
+        }
+
+        // Apply v=0 and v=v_max boundaries
+        for (int i = 0; i <= Ns; ++i) {
+            int k0 = i * (Nv + 1);
+            int kNv = i * (Nv + 1) + Nv;
+            double S_future = S[i] * std::exp(r * (T - t_n + 0.5 * dt)); // t_{n+1/2} = t_n - dt/2
+            V_star(k0) = optionType == OptionType::Call ? 
+                         (S_future < B ? std::max(S_future - K, 0.0) : 0.0) :
+                         (S_future < B ? std::max(K - S_future, 0.0) : 0.0);
+            V_star(kNv) = V_star(kNv - 1); // Neumann
+        }
+
+//--------------------------------------------------------------------------------------------------------------
+        // Second half-step: implicit in v
+        Eigen::SparseMatrix<double> A_v(Nv+1, Nv+1);
+        Eigen::VectorXd rhs_v(Nv+1);
+        for (int i = 1; i < Ns; ++i) {
+            triplets.clear();
+            rhs_v.setZero();
+
+            double cc = 0.5 * xi * xi * v[0] / (dv * dv);
+            double dd = kappa * (theta - v[0]) / (2.0 * dv);
+
+            triplets.push_back(Eigen::Triplet<double>(0, 0, 1.0 + 0.5* dt*(2.0*cc + r)));
+            triplets.push_back(Eigen::Triplet<double>(0, 1, -0.5 * dt * (cc + dd)));
+
+            for (int j = 1; j < Nv; ++j) {
+                double aa = 0.5 * v[j] * std::pow(localVol(S[i], t_n), 2) * S[i] * S[i]; // / (ds * ds);
+                double bb = r * S[i]; // / (2 * ds);
+                double cc = 0.5 * xi * xi * v[j] / (dv * dv);
+                double dd = kappa * (theta - v[j]) / (2.0 * dv);
+                double cross = rho * xi * v[j] * localVol(S[i], t_n) * S[i]; /// (4.0 * ds * dv);
+                int k = i * (Nv + 1) + j;
+
+                // Implicit v terms: I + theta * dt * (L_v - r)
+                triplets.push_back(Eigen::Triplet<double>(j, j, 1.0 + 0.5*dt * (2.0*cc + r)));
+                triplets.push_back(Eigen::Triplet<double>(j, j+1, -0.5* dt * (cc + dd)));
+                triplets.push_back(Eigen::Triplet<double>(j, j-1, -0.5* dt * (cc - dd)));
+
+                // Explicit terms rhs
+                double s1 = (V_star(k+Nv+1) - V_star(k-Nv-1))/(2.0*ds);
+                double s2 = (V_star(k+Nv+1) - 2.0*V_star(k) + V_star(k-Nv-1))/ds/ds;
+                double dvcross = (V_star(k+ Nv + 2) - V_star(k+ Nv) - V_star(k-Nv) + V_star(k-Nv-2))/(4.0*ds*dv);
+
+                rhs_v(j) = V(k) + dt/2.0*(bb*s1 + aa*s2 + cross*dvcross);
+            }
+
+            cc = 0.5*xi*xi * v[Nv] / (dv * dv);
+            dd = kappa * (theta - v[Nv]) / (2.0 * dv);
+//            std::cout<< aa <<", "<<bb<<", "<<std::endl;
+
+            triplets.push_back(Eigen::Triplet<double>(Nv, Nv, 1.0 + 0.5* dt*(2.0*cc + r)));
+            triplets.push_back(Eigen::Triplet<double>(Nv, Nv-1, -0.5* dt * (cc -dd)));
+
+            rhs_v[0] = V_star(i*(Nv+1));
+            rhs_v(Nv) = V_star(i*(Nv+1)+Nv);
+
+            // Solve tridiagonal system
+            A_v.setFromTriplets(triplets.begin(), triplets.end());
+            Eigen::SparseLU<Eigen::SparseMatrix<double>> solver_v;
+            solver_v.compute(A_v);
+
+//            std::cout<< "called S step solver, appears ok ..." << std::endl;
+
+            if (solver_v.info() != Eigen::Success) {
+                throw std::runtime_error("Sparse LU decomposition failed in v-step");
+            }
+            Eigen::VectorXd V_v_new = solver_v.solve(rhs_v);
+            for (int j = 1; j < Nv; ++j) {
+                V(i * (Nv + 1) + j) = V_v_new(j - 1);
+            }
+        }
+
+        // Apply boundaries after v-step
+        for (int i = 0; i <= Ns; ++i) {
+            int k0 = i * (Nv + 1);
+            int kNv = i * (Nv + 1) + Nv;
+            double S_future = S[i] * std::exp(r * (T - t_n)); // t_n
+            V(k0) = optionType == OptionType::Call ? 
+                    (S_future -B < epsiln ? std::max(S_future - K, 0.0) : 0.0) :
+                    (S_future - B<epsiln ? std::max(K - S_future, 0.0) : 0.0);
+            V(kNv) = V(kNv - 1); // Neumann
+            if (i == 0 || (barrierType == BarrierType::UpAndOut && S[i] >= B)) {
+                for (int j = 0; j <= Nv; ++j) {
+                    V(i * (Nv + 1) + j) = 0.0;
+                }
+            }
+        }
+    }
+
+    // Interpolate at (S0, v0, t=0)
+    int i = static_cast<int>(S0 / ds);
+    int j = static_cast<int>(v0 / dv);
+    if (i >= Ns || j >= Nv) return 0.0;
+    double s_frac = (S0 - S[i]) / ds;
+    double v_frac = (v0 - v[j]) / dv;
+    int k00 = i * (Nv + 1) + j;
+    int k10 = (i + 1) * (Nv + 1) + j;
+    int k01 = i * (Nv + 1) + (j + 1);
+    int k11 = (i + 1) * (Nv + 1) + (j + 1);
+    double V00 = V[k00], V10 = V[k10], V01 = V[k01], V11 = V[k11];
+    return (1 - s_frac) * (1 - v_frac) * V00 + s_frac * (1 - v_frac) * V10 + 
+           (1 - s_frac) * v_frac * V01 + s_frac * v_frac * V11;
+}

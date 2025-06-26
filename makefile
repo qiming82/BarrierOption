@@ -1,11 +1,12 @@
 # Makefile for Barrier Option Pricing
 CXX = g++
-CXXFLAGS = -O3 -Wall -std=c++11 -Iinclude
+CXXFLAGS = -O3 -Wall -std=c++11 -Iinclude -Ieigen
+#LDFLAGS = -I/eigen
 TARGET := barrier_option
 SRC := main.cpp $(wildcard ./src/*.cpp)
 OBJS := $(SRC:.cpp=.o)
 
-#LDFLAGS
+
 
 all: $(TARGET)
 

@@ -8,6 +8,7 @@
 #include <functional>
 #include <map>
 #include <algorithm>
+#include <Eigen/Sparse>
 
 // pi=3.141592653589793;
 typedef unsigned long u32;
@@ -20,6 +21,7 @@ enum class BarrierType { UpAndOut, DownAndOut };
 // Enum for exercise style
 enum class ExerciseStyle { European, American };
 
+enum class PricingMethod { PDE, MonteCarlo }; // New enum
 //const double pi = std::atan(1)*4.0;
 
 // Class to encapsulate barrier option pricing with general SLV
@@ -40,6 +42,10 @@ public:
 
     // american option
     double priceAmerican() const;
+
+    // pde solver, crank nicolson
+//    double pricePDE() const;
+    double priceADI() const;
 
     // Getter for option type
     std::string getOptionType() const;
@@ -75,6 +81,7 @@ private:
     OptionType optionType; // Call or Put
     BarrierType barrierType; // Up-and-out or Down-and-out
     ExerciseStyle exerciseStyle; // European or American
+    PricingMethod pricingMethod; // New field
     std::unique_ptr<std::mt19937> rng; // Smart pointer for random number generator
 //    std::mt19937* rng;
 
